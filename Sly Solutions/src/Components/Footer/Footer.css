@@ -1,0 +1,12 @@
+.link {
+  margin: 0.5rem; 
+  color: white;display: inline-block;
+}
+
+footer.bg-gray-800 {
+  padding: 0.5rem 1rem; /* Reduce padding for the footer */
+}
+
+footer .bg-gray-800.p-4 {
+  padding: 0.5rem; /* Further reduce padding inside the footer content */
+}

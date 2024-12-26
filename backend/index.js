@@ -2,8 +2,9 @@
 // const multer = require('multer');
 // const fs = require('fs');
 // const path = require('path');
+// const PDFDocument = require('pdfkit');
 // const cors = require('cors');
-// const { exec } = require('child_process');
+// const mammoth = require('mammoth'); // Library for extracting text from .docx files
 
 // const app = express();
 // const upload = multer({ dest: 'uploads/' });
@@ -25,30 +26,27 @@
 //   }
 
 //   try {
-//     const outputFilePath = path.join('uploads', `${file.filename}.pdf`);
+//     // Read the uploaded .docx file
+//     const wordFile = fs.readFileSync(file.path);
 
-//     // Command to convert .docx to .pdf using MS Word (replace with the correct path if needed)
-//     const command = `start /wait winword "${file.path}" /mFileSaveAs /q /n /tPDF /exit "${outputFilePath}"`;
+//     // Extract text from .docx using Mammoth
+//     const { value: extractedText } = await mammoth.extractRawText({ buffer: wordFile });
 
-//     exec(command, (error, stdout, stderr) => {
-//       if (error) {
-//         console.error('Error converting DOCX to PDF:', error);
-//         fs.unlinkSync(file.path); // Clean up uploaded file
-//         return res.status(500).json({ error: 'Error converting DOCX to PDF' });
-//       }
+//     // Create a PDF using PDFKit
+//     const pdfDoc = new PDFDocument();
+//     res.setHeader('Content-Type', 'application/pdf');
+//     res.setHeader(
+//       'Content-Disposition',
+//       `attachment; filename="${file.originalname.split('.')[0]}.pdf"`
+//     );
 
-//       // Send the generated PDF file as response
-//       res.setHeader('Content-Type', 'application/pdf');
-//       res.setHeader('Content-Disposition', `attachment; filename="${file.originalname.split('.')[0]}.pdf"`);
+//     pdfDoc.pipe(res);
+//     pdfDoc.fontSize(12).text(extractedText);
+//     pdfDoc.end();
 
-//       const fileStream = fs.createReadStream(outputFilePath);
-//       fileStream.pipe(res);
-
-//       // Clean up the uploaded DOCX file and generated PDF after the response is sent
-//       fileStream.on('end', () => {
-//         fs.unlinkSync(file.path); // Remove the uploaded DOCX file
-//         fs.unlinkSync(outputFilePath); // Remove the generated PDF file
-//       });
+//     // Clean up the uploaded file after the response is sent
+//     pdfDoc.on('finish', () => {
+//       fs.unlinkSync(file.path);
 //     });
 //   } catch (error) {
 //     console.error('Error generating PDF:', error);
@@ -59,14 +57,16 @@
 
 // const PORT = 5000;
 // app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+  
 
 
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const PDFDocument = require('pdfkit');
 const cors = require('cors');
-const { exec } = require('child_process');
+const mammoth = require('mammoth'); // For extracting text from .docx files
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
@@ -78,72 +78,42 @@ app.use(express.json());
 app.post('/api/convert-to-pdf', upload.single('file'), async (req, res) => {
   const file = req.file;
   if (!file) {
-    console.log('No file uploaded.');
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
   const fileExtension = path.extname(file.originalname).toLowerCase();
   if (fileExtension !== '.docx') {
-    console.log(`Invalid file type: ${fileExtension}`);
     fs.unlinkSync(file.path); // Clean up uploaded file
     return res.status(400).json({ error: 'Invalid file type. Please upload a .docx file.' });
   }
 
   try {
-    const outputFilePath = path.join('uploads', `${file.filename}.pdf`);
+    // Read the uploaded .docx file
+    const wordBuffer = fs.readFileSync(file.path);
 
-    // Replace this with the correct path to MS Word if needed
-    const command = `"C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE" "${file.path}" /mFileSaveAsPDF /q`;
+    // Extract text using Mammoth
+    const { value: extractedText } = await mammoth.extractRawText({ buffer: wordBuffer });
 
-    console.log('Executing command:', command);
+    // Create a PDF using PDFKit
+    const pdfDoc = new PDFDocument();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.originalname.split('.')[0]}.pdf"`
+    );
 
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error('Error executing MS Word command:', error.message);
-        console.error('stderr output:', stderr);
-        fs.unlinkSync(file.path); // Clean up uploaded file
-        return res.status(500).json({ error: 'Error converting DOCX to PDF' });
-      }
+    pdfDoc.pipe(res);
+    pdfDoc.fontSize(12).text(extractedText);
+    pdfDoc.end();
 
-      console.log('Command executed successfully. Checking for output file...');
-      console.log('stdout output:', stdout);
-
-      // Check if the PDF file exists
-      if (!fs.existsSync(outputFilePath)) {
-        console.error('Generated PDF file not found at:', outputFilePath);
-        fs.unlinkSync(file.path);
-        return res.status(500).json({ error: 'PDF file not generated' });
-      }
-
-      console.log('PDF file generated successfully at:', outputFilePath);
-
-      // Send the generated PDF file as response
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${file.originalname.split('.')[0]}.pdf"`
-      );
-
-      const fileStream = fs.createReadStream(outputFilePath);
-      fileStream.pipe(res);
-
-      // Clean up files after response is sent
-      fileStream.on('end', () => {
-        console.log('Cleaning up files...');
-        fs.unlinkSync(file.path); // Remove uploaded DOCX
-        fs.unlinkSync(outputFilePath); // Remove generated PDF
-        console.log('Cleanup complete.');
-      });
-
-      fileStream.on('error', (streamError) => {
-        console.error('Error sending file:', streamError);
-        res.status(500).json({ error: 'Error sending the PDF file' });
-      });
+    // Clean up the uploaded file after the response is sent
+    pdfDoc.on('finish', () => {
+      fs.unlinkSync(file.path);
     });
   } catch (error) {
-    console.error('Unexpected error:', error.message);
+    console.error('Error generating PDF:', error);
     res.status(500).json({ error: 'Internal Server Error' });
-    fs.unlinkSync(file.path); // Ensure cleanup
+    fs.unlinkSync(file.path); // Ensure the uploaded file is cleaned up in case of an error
   }
 });
 
